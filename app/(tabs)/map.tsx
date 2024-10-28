@@ -7,7 +7,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, firestore } from "@/firebaseConfig.js";
 import Button from "@/components/Button";
 import * as ImageManipulator from "expo-image-manipulator";
-import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
 
 type MarkerType = {
   coordinate: {
@@ -78,37 +78,39 @@ export default function Map() {
     };
     setMarkers([...markers, newMarker]);
     setCurrentMarkerKey(newMarker.key);
-    handleSaveMarker();
+    handleSaveMarker(newMarker);
     await pickImageAsync(newMarker.key);
   };
 
-  const handleSaveMarker = async () => {
+  const handleSaveMarker = async (newMarker: MarkerType) => {
     console.log("handle marker");
 
     // Find the marker in the state based on the current marker key
-    const markerToSave = markers.find((marker) => marker.key === currentMarkerKey);
+    // const markerToSave = markers.find((marker) => marker.key === currentMarkerKey);
 
-    if (markerToSave) {
+    if (newMarker) {
       try {
         // Prepare the data to save, checking for imageUri
         const markerData: { latitude: number; longitude: number; title: string; key: number; imageUri?: string } = {
-          latitude: markerToSave.coordinate.latitude,
-          longitude: markerToSave.coordinate.longitude,
-          title: markerToSave.title,
-          key: markerToSave.key,
+          latitude: newMarker.coordinate.latitude,
+          longitude: newMarker.coordinate.longitude,
+          title: newMarker.title,
+          key: newMarker.key,
         };
 
         // Only add imageUri if it exists
-        if (markerToSave.imageUri) {
-          markerData.imageUri = markerToSave.imageUri; // Add imageUri if available
+        if (newMarker.imageUri) {
+          markerData.imageUri = newMarker.imageUri; // Add imageUri if available
         }
 
         // Log the data being saved
         console.log("Data being saved:", markerData);
 
         // Save the marker data to Firestore
-        await addDoc(collection(firestore, "markers"), markerData);
-        console.log("Marker saved to Firestore:", markerToSave);
+        const docRef = await addDoc(collection(firestore, "markers"), markerData);
+        console.log("**********id er du der?********* : ", docRef);
+
+        console.log("Marker saved to Firestore:", newMarker);
       } catch (error) {
         if (error instanceof Error) {
           console.error("Marker saving error:", error.message);
@@ -133,6 +135,9 @@ export default function Map() {
 
         // Optional: set selectedImage if needed elsewhere
         setSelectedImage(imageUri);
+
+        // Update the marker with the selected image URI
+        // setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === markerKey ? { ...marker, imageUri } : marker)));
 
         // Update the marker with the selected image URI
         setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === markerKey ? { ...marker, imageUri } : marker)));
@@ -176,18 +181,19 @@ export default function Map() {
       const downloadURL = await getDownloadURL(storageRef);
       console.log("Download URL obtained:", downloadURL);
 
-      // // Update the marker in Firestore with the new image URL
-      // if (currentMarkerKey !== null) {
-      //   // Create a reference to the specific marker document in Firestore
-      //   const markerDocRef = doc(firestore, "markers", currentMarkerKey.toString());
+      // Update the marker in Firestore with the new image URL
+      if (currentMarkerKey !== null) {
+        // Create a reference to the specific marker document in Firestore
+        const markerDocRef = doc(firestore, "markers", currentMarkerKey.toString());
+        console.log("Markerdocref: ", markerDocRef);
 
-      //   // Update the imageUri field for that marker document
-      //   await updateDoc(markerDocRef, { imageUri: downloadURL });
-      //   console.log("Marker updated in Firestore with new image URL:", downloadURL);
-      // }
+        // Update the imageUri field for that marker document
+        await updateDoc(markerDocRef, { imageUri: downloadURL });
+        console.log("Marker updated in Firestore with new image URL:", downloadURL);
+      }
 
-      // // Update the marker with the new image URL in local state
-      // setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === currentMarkerKey ? { ...marker, imageUri: downloadURL } : marker)));
+      // Update the marker with the new image URL in local state
+      setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === currentMarkerKey ? { ...marker, imageUri: downloadURL } : marker)));
 
       Alert.alert("Image uploaded successfully!");
 
