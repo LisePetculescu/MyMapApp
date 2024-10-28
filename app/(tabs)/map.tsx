@@ -3,9 +3,11 @@ import { View, Alert, StyleSheet, Image } from "react-native";
 import MapView, { Marker, Region, LongPressEvent } from "react-native-maps";
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
-import { ref, uploadBytes } from "firebase/storage";
-import { storage } from "@/firebaseConfig.js"; 
-import testFirebaseStorage from "./test";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage, firestore } from "@/firebaseConfig.js";
+import Button from "@/components/Button";
+import * as ImageManipulator from "expo-image-manipulator";
+import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
 
 type MarkerType = {
   coordinate: {
@@ -17,10 +19,7 @@ type MarkerType = {
   imageUri?: string;
 };
 
-
 export default function Map() {
-  // testFirebaseStorage();
-  
   const [markers, setMarkers] = useState<MarkerType[]>([]);
   const [region, setRegion] = useState<Region>({
     latitude: 55,
@@ -29,7 +28,6 @@ export default function Map() {
     longitudeDelta: 20,
   });
   const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
-  const [showImagePicker, setShowImagePicker] = useState(false);
   const [currentMarkerKey, setCurrentMarkerKey] = useState<number | null>(null); // To track the current marker
 
   const mapView = useRef<MapView | null>(null); // ref. to map obj.
@@ -80,47 +78,185 @@ export default function Map() {
     };
     setMarkers([...markers, newMarker]);
     setCurrentMarkerKey(newMarker.key);
+    handleSaveMarker();
     await pickImageAsync(newMarker.key);
   };
 
-  const pickImageAsync = async (markerKey: number) => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      quality: 1,
-    });
+  const handleSaveMarker = async () => {
+    console.log("handle marker");
 
-    if (!result.canceled) {
-      console.log("Image selected:", result.assets[0].uri);
-      const imageUri = result.assets[0].uri;
-      setSelectedImage(imageUri);
-      await uploadImage(imageUri); // Call upload function here
+    // Find the marker in the state based on the current marker key
+    const markerToSave = markers.find((marker) => marker.key === currentMarkerKey);
 
-      // Update the marker with the selected image URI
-      setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === markerKey ? { ...marker, imageUri } : marker)));
+    if (markerToSave) {
+      try {
+        // Prepare the data to save, checking for imageUri
+        const markerData: { latitude: number; longitude: number; title: string; key: number; imageUri?: string } = {
+          latitude: markerToSave.coordinate.latitude,
+          longitude: markerToSave.coordinate.longitude,
+          title: markerToSave.title,
+          key: markerToSave.key,
+        };
+
+        // Only add imageUri if it exists
+        if (markerToSave.imageUri) {
+          markerData.imageUri = markerToSave.imageUri; // Add imageUri if available
+        }
+
+        // Log the data being saved
+        console.log("Data being saved:", markerData);
+
+        // Save the marker data to Firestore
+        await addDoc(collection(firestore, "markers"), markerData);
+        console.log("Marker saved to Firestore:", markerToSave);
+      } catch (error) {
+        if (error instanceof Error) {
+          console.error("Marker saving error:", error.message);
+          alert("Error saving marker: " + error.message);
+        }
+      }
     } else {
-      Alert.alert("You did not select any image.");
+      alert("No marker found to save.");
     }
   };
 
-  const uploadImage = async (uri: string) => {
-    console.log("UPLOAD");
+  const pickImageAsync = async (markerKey: number) => {
+    try {
+      let result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        const imageUri: string = result.assets[0].uri; // Assert as string
+        console.log("Image selected:", imageUri);
+
+        // Optional: set selectedImage if needed elsewhere
+        setSelectedImage(imageUri);
+
+        // Update the marker with the selected image URI
+        setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === markerKey ? { ...marker, imageUri } : marker)));
+      } else {
+        Alert.alert("You did not select any image.");
+      }
+    } catch (error) {
+      console.error("Image selection error:", error);
+    }
+  };
+
+  const uploadImage = async () => {
+    if (!selectedImage || currentMarkerKey === null) {
+      Alert.alert("No image selected or no current marker.");
+      return;
+    }
 
     try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      console.log("Starting upload...");
 
-      const storageRef = ref(storage, `images/${Date.now()}.jpg`); // Create a reference to the file you want to upload
-      await uploadBytes(storageRef, blob); // Upload the blob to Firebase Storage
+      // Resize the image before uploading
+      const manipulatedImage = await ImageManipulator.manipulateAsync(selectedImage, [{ resize: { width: 800 } }], { compress: 1, format: ImageManipulator.SaveFormat.JPEG });
+
+      // Fetch the resized image as a blob
+      const response = await fetch(manipulatedImage.uri);
+      if (!response.ok) {
+        throw new Error("Failed to fetch the image");
+      }
+
+      const blob = await response.blob(); // Create a blob directly from the response
+      console.log("Blob created");
+
+      // Upload to Firebase Storage
+      const storageRef = ref(storage, `images/${Date.now()}.jpg`);
+      console.log("Storage ref created:", storageRef);
+
+      await uploadBytes(storageRef, blob);
+      console.log("Upload successful!");
+
+      // Get the download URL of the uploaded image
+      const downloadURL = await getDownloadURL(storageRef);
+      console.log("Download URL obtained:", downloadURL);
+
+      // // Update the marker in Firestore with the new image URL
+      // if (currentMarkerKey !== null) {
+      //   // Create a reference to the specific marker document in Firestore
+      //   const markerDocRef = doc(firestore, "markers", currentMarkerKey.toString());
+
+      //   // Update the imageUri field for that marker document
+      //   await updateDoc(markerDocRef, { imageUri: downloadURL });
+      //   console.log("Marker updated in Firestore with new image URL:", downloadURL);
+      // }
+
+      // // Update the marker with the new image URL in local state
+      // setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === currentMarkerKey ? { ...marker, imageUri: downloadURL } : marker)));
+
       Alert.alert("Image uploaded successfully!");
+
+      // Optionally cancel image selection if needed
+      cancelImageSelection();
     } catch (error) {
       if (error instanceof Error) {
-        console.error("Error uploading image: ", error);
-        Alert.alert("Error uploading image: ", error.message);
+        console.error("Image upload error:", error.message);
+        Alert.alert("Image upload error", error.message);
       } else {
-        console.error("Unexpected error: ", error);
+        console.error("Unexpected error:", error);
         Alert.alert("Unexpected error occurred.");
       }
     }
+  };
+
+  // async function uploadImage() {
+  //   if (!selectedImage) {
+  //     Alert.alert("No image selected");
+  //     return;
+  //   }
+
+  //   try {
+  //     console.log("Starting upload...");
+
+  //     // // Fetch the image as a blob
+  //     // const response = await fetch(selectedImage);
+  //     // if (!response.ok) {
+  //     //   throw new Error("Failed to fetch the image");
+  //     // }
+
+  //     // Resize the image before uploading
+  //     const manipulatedImage = await ImageManipulator.manipulateAsync(
+  //       selectedImage,
+  //       [{ resize: { width: 800 } }], // Resize to width of 800 pixels
+  //       { compress: 1, format: ImageManipulator.SaveFormat.JPEG } // Set desired format
+  //     );
+
+  //     // Fetch the resized image as a blob
+  //     const response = await fetch(manipulatedImage.uri);
+  //     if (!response.ok) {
+  //       throw new Error("Failed to fetch the image");
+  //     }
+
+  //     const blob = await response.blob(); // Create a blob directly from the response
+  //     console.log("Blob created");
+
+  //     // Upload to Firebase Storage
+  //     const storageRef = ref(storage, `images/${Date.now()}.jpg`);
+  //     console.log("Storage ref created:", storageRef);
+
+  //     await uploadBytes(storageRef, blob);
+  //     console.log("Upload successful!");
+
+  //     Alert.alert("Image uploaded successfully!");
+  //     cancelImageSelection();
+  //   } catch (error) {
+  //     if (error instanceof Error) {
+  //       console.error("Image selection error:", error.message);
+  //       Alert.alert("Image selection error", error.message);
+  //     } else {
+  //       console.error("Unexpected error:", error);
+  //       Alert.alert("Unexpected error occurred.");
+  //     }
+  //   }
+  // }
+
+  const cancelImageSelection = () => {
+    setSelectedImage(undefined); // Reset selected image
   };
 
   return (
@@ -137,9 +273,35 @@ export default function Map() {
           </Marker>
         ))}
       </MapView>
+      {selectedImage && (
+        <View style={styles.overlay}>
+          <Image source={{ uri: selectedImage }} style={{ width: 300, height: 300 }} />
+          <Button label="Upload Image" theme="select" onPress={uploadImage} />
+          <Button label="Cancel" theme="cancel" onPress={cancelImageSelection} />
+        </View>
+      )}
     </View>
   );
+
+  //   return (
+  //     <View style={styles.container}>
+  //       <MapView style={styles.map} region={region} onLongPress={addMarker}>
+  //         {markers.map((marker) => (
+  //           <Marker coordinate={marker.coordinate} key={marker.key} title={marker.title}>
+  //             {marker.imageUri && (
+  //               <Image
+  //                 source={{ uri: marker.imageUri }}
+  //                 style={{ width: 50, height: 50, borderRadius: 25 }} // Small version of the image
+  //               />
+  //             )}
+  //           </Marker>
+  //         ))}
+  //       </MapView>
+  //     </View>
+  //   );
 }
+
+console.log("hej");
 
 // import React, { useRef, useState, useEffect } from "react";
 // import MapView, { Marker, LongPressEvent, Region } from "react-native-maps";
@@ -437,5 +599,12 @@ const styles = StyleSheet.create({
     width: 320,
     height: 440,
     borderRadius: 18,
+  },
+  overlay: {
+    position: "absolute",
+    bottom: 20,
+    alignSelf: "center",
+    alignItems: "center",
+    zIndex: 10,
   },
 });
