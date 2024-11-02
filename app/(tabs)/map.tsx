@@ -7,9 +7,10 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, firestore } from "@/firebaseConfig.js";
 import Button from "@/components/Button";
 import * as ImageManipulator from "expo-image-manipulator";
-import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, addDoc, updateDoc, onSnapshot, deleteDoc, setDoc } from "firebase/firestore";
 
 type MarkerType = {
+  id?: string | undefined;
   coordinate: {
     latitude: number;
     longitude: number;
@@ -28,19 +29,50 @@ export default function Map() {
     longitudeDelta: 20,
   });
   const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
-  const [currentMarkerKey, setCurrentMarkerKey] = useState<number | null>(null); // To track the current marker
+  const [currentMarkerId, setCurrentMarkerId] = useState<string | null>(null); // To track the current marker
 
   const mapView = useRef<MapView | null>(null); // ref. to map obj.
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
 
   useEffect(() => {
     startListening();
+    fetchMarkers();
     return () => {
       if (locationSubscription.current) {
         locationSubscription.current.remove();
       }
     };
   }, []);
+
+  // get collection data
+  async function fetchMarkers() {
+    try {
+      // const querySnapshot = await getDocs(collection(firestore, "markers"));
+      const unSub = onSnapshot(collection(firestore, "markers"), (collData) => {
+        const fetchedMarkers: MarkerType[] = [];
+        collData.forEach((doc) => {
+          const data = doc.data();
+          fetchedMarkers.push({
+            coordinate: { latitude: data.latitude, longitude: data.longitude },
+            key: data.key,
+            title: data.title,
+            imageUri: data.imageUri,
+            id: doc.id,
+          });
+        });
+        setMarkers(fetchedMarkers);
+        // console.log(fetchedMarkers);
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error("Error fetching markers:", error.message);
+        Alert.alert("Error fetching markers", error.message);
+      } else {
+        console.error("Unexpected error:", error);
+        Alert.alert("Unexpected error occurred.");
+      }
+    }
+  }
 
   async function startListening() {
     let { status } = await Location.requestForegroundPermissionsAsync();
@@ -76,17 +108,13 @@ export default function Map() {
       title: "New Marker",
       imageUri: undefined,
     };
-    setMarkers([...markers, newMarker]);
-    setCurrentMarkerKey(newMarker.key);
+
     handleSaveMarker(newMarker);
-    await pickImageAsync(newMarker.key);
+    // await pickImageAsync(newMarker);
   };
 
   const handleSaveMarker = async (newMarker: MarkerType) => {
     console.log("handle marker");
-
-    // Find the marker in the state based on the current marker key
-    // const markerToSave = markers.find((marker) => marker.key === currentMarkerKey);
 
     if (newMarker) {
       try {
@@ -110,6 +138,13 @@ export default function Map() {
         const docRef = await addDoc(collection(firestore, "markers"), markerData);
         console.log("**********id er du der?********* : ", docRef);
 
+        // set currentmarkerID
+        setCurrentMarkerId(docRef.id);
+
+        // call image picker with marker id
+        // await pickImageAsync(docRef.id);
+        await pickImageAsync();
+
         console.log("Marker saved to Firestore:", newMarker);
       } catch (error) {
         if (error instanceof Error) {
@@ -122,7 +157,7 @@ export default function Map() {
     }
   };
 
-  const pickImageAsync = async (markerKey: number) => {
+  const pickImageAsync = async () => {
     try {
       let result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
@@ -135,12 +170,7 @@ export default function Map() {
 
         // Optional: set selectedImage if needed elsewhere
         setSelectedImage(imageUri);
-
-        // Update the marker with the selected image URI
-        // setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === markerKey ? { ...marker, imageUri } : marker)));
-
-        // Update the marker with the selected image URI
-        setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === markerKey ? { ...marker, imageUri } : marker)));
+        
       } else {
         Alert.alert("You did not select any image.");
       }
@@ -150,7 +180,7 @@ export default function Map() {
   };
 
   const uploadImage = async () => {
-    if (!selectedImage || currentMarkerKey === null) {
+    if (!selectedImage || currentMarkerId === null) {
       Alert.alert("No image selected or no current marker.");
       return;
     }
@@ -182,18 +212,17 @@ export default function Map() {
       console.log("Download URL obtained:", downloadURL);
 
       // Update the marker in Firestore with the new image URL
-      if (currentMarkerKey !== null) {
+      if (currentMarkerId !== null) {
         // Create a reference to the specific marker document in Firestore
-        const markerDocRef = doc(firestore, "markers", currentMarkerKey.toString());
+        const markerDocRef = doc(firestore, "markers", currentMarkerId);
         console.log("Markerdocref: ", markerDocRef);
 
         // Update the imageUri field for that marker document
         await updateDoc(markerDocRef, { imageUri: downloadURL });
         console.log("Marker updated in Firestore with new image URL:", downloadURL);
+        console.log("Current marker ID: ", currentMarkerId);
+        
       }
-
-      // Update the marker with the new image URL in local state
-      setMarkers((prevMarkers) => prevMarkers.map((marker) => (marker.key === currentMarkerKey ? { ...marker, imageUri: downloadURL } : marker)));
 
       Alert.alert("Image uploaded successfully!");
 
@@ -210,57 +239,6 @@ export default function Map() {
     }
   };
 
-  // async function uploadImage() {
-  //   if (!selectedImage) {
-  //     Alert.alert("No image selected");
-  //     return;
-  //   }
-
-  //   try {
-  //     console.log("Starting upload...");
-
-  //     // // Fetch the image as a blob
-  //     // const response = await fetch(selectedImage);
-  //     // if (!response.ok) {
-  //     //   throw new Error("Failed to fetch the image");
-  //     // }
-
-  //     // Resize the image before uploading
-  //     const manipulatedImage = await ImageManipulator.manipulateAsync(
-  //       selectedImage,
-  //       [{ resize: { width: 800 } }], // Resize to width of 800 pixels
-  //       { compress: 1, format: ImageManipulator.SaveFormat.JPEG } // Set desired format
-  //     );
-
-  //     // Fetch the resized image as a blob
-  //     const response = await fetch(manipulatedImage.uri);
-  //     if (!response.ok) {
-  //       throw new Error("Failed to fetch the image");
-  //     }
-
-  //     const blob = await response.blob(); // Create a blob directly from the response
-  //     console.log("Blob created");
-
-  //     // Upload to Firebase Storage
-  //     const storageRef = ref(storage, `images/${Date.now()}.jpg`);
-  //     console.log("Storage ref created:", storageRef);
-
-  //     await uploadBytes(storageRef, blob);
-  //     console.log("Upload successful!");
-
-  //     Alert.alert("Image uploaded successfully!");
-  //     cancelImageSelection();
-  //   } catch (error) {
-  //     if (error instanceof Error) {
-  //       console.error("Image selection error:", error.message);
-  //       Alert.alert("Image selection error", error.message);
-  //     } else {
-  //       console.error("Unexpected error:", error);
-  //       Alert.alert("Unexpected error occurred.");
-  //     }
-  //   }
-  // }
-
   const cancelImageSelection = () => {
     setSelectedImage(undefined); // Reset selected image
   };
@@ -269,7 +247,7 @@ export default function Map() {
     <View style={styles.container}>
       <MapView style={styles.map} region={region} onLongPress={addMarker}>
         {markers.map((marker) => (
-          <Marker coordinate={marker.coordinate} key={marker.key} title={marker.title}>
+          <Marker id={marker.id} coordinate={marker.coordinate} key={marker.id} title={marker.title}>
             {marker.imageUri && (
               <Image
                 source={{ uri: marker.imageUri }}
