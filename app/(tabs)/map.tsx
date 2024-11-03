@@ -7,9 +7,9 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage
 import { storage, firestore } from "@/firebaseConfig.js";
 import Button from "@/components/Button";
 import * as ImageManipulator from "expo-image-manipulator";
-import { collection, doc, addDoc, updateDoc, onSnapshot, deleteDoc } from "firebase/firestore";
+import { collection, doc, addDoc, updateDoc, onSnapshot } from "firebase/firestore";
 
-type MarkerType = {
+interface MarkerType {
   id?: string | undefined;
   coordinate: {
     latitude: number;
@@ -19,7 +19,7 @@ type MarkerType = {
   title: string;
   imageUri?: string;
   imagepath?: string;
-};
+}
 
 export default function Map() {
   const [markers, setMarkers] = useState<MarkerType[]>([]);
@@ -28,13 +28,14 @@ export default function Map() {
     longitude: 12,
     latitudeDelta: 20,
     longitudeDelta: 20,
-  });
-  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
-  const [currentImage, setCurrentImage] = useState<string | undefined>(undefined);
-  const [currentMarkerId, setCurrentMarkerId] = useState<string | undefined>(undefined); // To track the current marker
+  }); // these numbers makes the map show DK as a starting point
 
   const mapView = useRef<MapView | null>(null); // ref. to map obj.
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+  const [currentImage, setCurrentImage] = useState<string | undefined>(undefined);
+  const [currentMarkerId, setCurrentMarkerId] = useState<string | undefined>(undefined); // To track the current marker
 
   useEffect(() => {
     startListening();
@@ -210,7 +211,8 @@ export default function Map() {
       console.log("Starting upload...");
 
       // Resize the image before uploading
-      const manipulatedImage = await ImageManipulator.manipulateAsync(selectedImage, [{ resize: { width: 800 } }], { compress: 1, format: ImageManipulator.SaveFormat.JPEG });
+      const manipulatedImage = await ImageManipulator
+      .manipulateAsync(selectedImage, [{ resize: { width: 800 } }], { compress: 1, format: ImageManipulator.SaveFormat.JPEG });
 
       // Fetch the resized image as a blob
       const response = await fetch(manipulatedImage.uri);
@@ -273,10 +275,6 @@ export default function Map() {
   function updateImage() {
     // delete old image when a new one is uploaded on a marker
     console.log("update image on marker");
-
-    // gem reference til gammelt billede der skal slettes
-    // const imageToDelete = currentImage;
-    // deleteImage(imageToDelete);
 
     // vælg nyt billede
     pickImageAsync();
