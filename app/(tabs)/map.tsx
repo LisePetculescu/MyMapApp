@@ -3,7 +3,7 @@ import { View, Alert, StyleSheet, Image } from "react-native";
 import MapView, { Marker, Region, LongPressEvent } from "react-native-maps";
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { storage, firestore } from "@/firebaseConfig.js";
 import Button from "@/components/Button";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -18,6 +18,7 @@ type MarkerType = {
   key: number;
   title: string;
   imageUri?: string;
+  imagepath?: string;
 };
 
 export default function Map() {
@@ -220,8 +221,10 @@ export default function Map() {
       const blob = await response.blob(); // Create a blob directly from the response
       console.log("Blob created");
 
+      const imageName = `images/${new Date().getTime()}.jpg`;
+
       // Upload to Firebase Storage
-      const storageRef = ref(storage, `images/${Date.now()}.jpg`);
+      const storageRef = ref(storage, imageName);
       console.log("Storage ref created:", storageRef);
 
       await uploadBytes(storageRef, blob);
@@ -238,13 +241,17 @@ export default function Map() {
         console.log("Markerdocref: ", markerDocRef);
 
         // Update the imageUri field for that marker document
-        await updateDoc(markerDocRef, { imageUri: downloadURL });
+        // await updateDoc(markerDocRef, { imageUri: downloadURL });
+        await updateDoc(markerDocRef, { imageUri: downloadURL, imagePath: imageName });
         console.log("Marker updated in Firestore with new image URL:", downloadURL);
         console.log("Current marker ID: ", currentMarkerId);
       }
 
       Alert.alert("Image uploaded successfully!");
 
+      if (currentImage) {
+        deleteImage(currentImage);
+      }
       // Optionally cancel image selection if needed
       cancelImageSelection();
     } catch (error) {
@@ -268,8 +275,8 @@ export default function Map() {
     console.log("update image on marker");
 
     // gem reference til gammelt billede der skal slettes
-    const imageToDelete = currentImage;
-    deleteImage(imageToDelete);
+    // const imageToDelete = currentImage;
+    // deleteImage(imageToDelete);
 
     // vælg nyt billede
     pickImageAsync();
@@ -280,6 +287,17 @@ export default function Map() {
   function deleteImage(imageToDelete: string | undefined) {
     if (imageToDelete) {
       console.log("delete image: ", imageToDelete);
+
+      const imageRef = ref(storage, imageToDelete);
+
+      console.log("imageRef: ", imageRef);
+
+      try {
+        deleteObject(imageRef).then(() => Alert.alert("Old image deleted"));
+        console.log("IMAGE DELETED!!!!!!!!!!!!!!!!!", imageRef);
+      } catch {
+        console.error("ERROR: couldn't delete old image");
+      }
     } else {
       console.error("no image to delete");
     }
