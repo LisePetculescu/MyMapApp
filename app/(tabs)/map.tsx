@@ -27,7 +27,7 @@ export default function Map() {
     latitude: 55,
     longitude: 12,
     latitudeDelta: 20,
-    longitudeDelta: 20,
+    longitudeDelta: 20
   }); // these numbers makes the map show DK as a starting point
 
   const mapView = useRef<MapView | null>(null); // ref. to map obj.
@@ -78,7 +78,7 @@ export default function Map() {
             key: data.key,
             title: data.title,
             imageUri: data.imageUri,
-            id: doc.id,
+            id: doc.id
           });
         });
         setMarkers(fetchedMarkers);
@@ -106,14 +106,14 @@ export default function Map() {
     locationSubscription.current = await Location.watchPositionAsync(
       {
         distanceInterval: 100, // 100 meters
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.High
       },
       (location) => {
         const newRegion = {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
           latitudeDelta: 20,
-          longitudeDelta: 20,
+          longitudeDelta: 20
         };
         setRegion(newRegion); // updates the map with the new location
         if (mapView.current) {
@@ -129,7 +129,7 @@ export default function Map() {
       coordinate: { latitude, longitude },
       key: Date.now(),
       title: "New Marker",
-      imageUri: undefined,
+      imageUri: undefined
     };
 
     handleSaveMarker(newMarker);
@@ -146,7 +146,7 @@ export default function Map() {
           latitude: newMarker.coordinate.latitude,
           longitude: newMarker.coordinate.longitude,
           title: newMarker.title,
-          key: newMarker.key,
+          key: newMarker.key
         };
 
         // Only add imageUri if it exists
@@ -184,7 +184,7 @@ export default function Map() {
     try {
       let result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
-        quality: 1,
+        quality: 1
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
@@ -211,8 +211,7 @@ export default function Map() {
       console.log("Starting upload...");
 
       // Resize the image before uploading
-      const manipulatedImage = await ImageManipulator
-      .manipulateAsync(selectedImage, [{ resize: { width: 800 } }], { compress: 1, format: ImageManipulator.SaveFormat.JPEG });
+      const manipulatedImage = await ImageManipulator.manipulateAsync(selectedImage, [{ resize: { width: 800 } }], { compress: 1, format: ImageManipulator.SaveFormat.JPEG });
 
       // Fetch the resized image as a blob
       const response = await fetch(manipulatedImage.uri);
@@ -359,30 +358,30 @@ console.log("hej");
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flex: 1
   },
   map: {
     width: "100%",
-    height: "100%",
+    height: "100%"
   },
   button: {
     fontSize: 20,
     textDecorationLine: "underline",
-    color: "#f8ff",
+    color: "#f8ff"
   },
   imageContainer: {
-    flex: 1,
+    flex: 1
   },
   image: {
     width: 320,
     height: 440,
-    borderRadius: 18,
+    borderRadius: 18
   },
   overlay: {
     position: "absolute",
     bottom: 20,
     alignSelf: "center",
     alignItems: "center",
-    zIndex: 10,
-  },
+    zIndex: 10
+  }
 });
